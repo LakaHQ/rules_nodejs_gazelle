@@ -1,0 +1,4 @@
+load("//infrastructure:exports.bzl", "export")
+
+#auto
+export(files = ["file.json"])

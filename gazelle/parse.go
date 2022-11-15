@@ -36,7 +36,7 @@ func ParseJS(data []byte) ([]string, error) {
 			if err != nil {
 				return nil, fmt.Errorf("unquoting string literal %s from js, %v", match[IMPORT], err)
 			}
-			imports = append(imports, strings.ToLower(unquoted))
+			imports = append(imports, unquoted)
 
 		case match[REQUIRE] != nil:
 			unquoted, err := unquoteImportString(match[REQUIRE])
@@ -56,6 +56,25 @@ func ParseJS(data []byte) ([]string, error) {
 			unquoted, err := unquoteImportString(match[JEST_MOCK])
 			if err != nil {
 				return nil, fmt.Errorf("unquoting string literal %s from js, %v", match[JEST_MOCK], err)
+			}
+			imports = append(imports, strings.ToLower(unquoted))
+
+		case match[JEST_REQUIRE_ACTUAL] != nil:
+			unquoted, err := unquoteImportString(match[JEST_REQUIRE_ACTUAL])
+			if err != nil {
+				return nil, fmt.Errorf("unquoting string literal %s from js, %v", match[JEST_REQUIRE_ACTUAL], err)
+			}
+			imports = append(imports, strings.ToLower(unquoted))
+		case match[REQUIRE_RESOLVE] != nil:
+			unquoted, err := unquoteImportString(match[REQUIRE_RESOLVE])
+			if err != nil {
+				return nil, fmt.Errorf("unquoting string literal %s from js, %v", match[REQUIRE_RESOLVE], err)
+			}
+			imports = append(imports, strings.ToLower(unquoted))
+		case match[JEST_CREATE_MOCK_FROM_MODULE] != nil:
+			unquoted, err := unquoteImportString(match[JEST_CREATE_MOCK_FROM_MODULE])
+			if err != nil {
+				return nil, fmt.Errorf("unquoting string literal %s from js, %v", match[JEST_CREATE_MOCK_FROM_MODULE], err)
 			}
 			imports = append(imports, strings.ToLower(unquoted))
 
@@ -96,10 +115,13 @@ func unquoteImportString(quoted []byte) (string, error) {
 }
 
 const (
-	IMPORT    = 1
-	REQUIRE   = 2
-	EXPORT    = 3
-	JEST_MOCK = 4
+	IMPORT                       = 1
+	REQUIRE                      = 2
+	EXPORT                       = 3
+	JEST_MOCK                    = 4
+	JEST_REQUIRE_ACTUAL          = 5
+	REQUIRE_RESOLVE              = 6
+	JEST_CREATE_MOCK_FROM_MODULE = 7
 )
 
 var jsImportPattern = compileJsImportPattern()
@@ -110,6 +132,10 @@ func compileJsImportPattern() *regexp.Regexp {
 	importPattern := `(?m)^import\s(?:(?:.|\n)+?from )??(?P<import>` + stringLiteralPattern + `).*?`
 	requirePattern := `(?m)^\s*?(?:const .+ = )?require\((?P<require>` + stringLiteralPattern + `)\).*`
 	exportPattern := `(?m)^export\s(?:(?:.|\n)+?from )??(?P<export>` + stringLiteralPattern + `).*?`
-	jestMockPattern := `(?m)^\s*?(?:const .+ = )?jest.mock\((?P<jestMock>` + stringLiteralPattern + `),.*`
-	return regexp.MustCompile(strings.Join([]string{importPattern, requirePattern, exportPattern, jestMockPattern}, "|"))
+	jestMockPattern := `(?m)^\s*?(?:const .+ = )?jest.mock\((?P<jestMock>` + stringLiteralPattern + `,*)*`
+	jestRequireActualPattern := `(?m)^\s*?(?:return )?jest.requireActual\((?P<jestRequireActual>` + stringLiteralPattern + `).*?`
+	requireResolvePattern := `(?m)^\s*?(?:const .+ = )?require.resolve\((?P<requireResolve>` + stringLiteralPattern + `)\).*`
+	jestCreateMockFromModulePattern := `(?m)^\s*?(?:const .+ = )?jest.createMockFromModule\((?P<createMockFromModule>` + stringLiteralPattern + `)\).*`
+
+	return regexp.MustCompile(strings.Join([]string{importPattern, requirePattern, exportPattern, jestMockPattern, jestRequireActualPattern, requireResolvePattern, jestCreateMockFromModulePattern}, "|"))
 }

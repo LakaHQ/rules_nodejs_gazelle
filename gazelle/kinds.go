@@ -25,6 +25,9 @@ import (
 // kinds of rules generated for this language may be found here.
 func (*JS) Kinds() map[string]rule.KindInfo {
 	return map[string]rule.KindInfo{
+		"export": {
+			MatchAny: false,
+		},
 		"js_library": {
 			MatchAny: false,
 			NonEmptyAttrs: map[string]bool{

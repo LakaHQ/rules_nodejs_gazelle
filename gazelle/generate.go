@@ -49,6 +49,11 @@ var jestRules = rule.LoadInfo{
 	Name:    "@npm//jest:index.bzl",
 	Symbols: []string{"jest_test"},
 }
+
+var exportsRules = rule.LoadInfo{
+	Name:    "//infrastructure:exports.bzl",
+	Symbols: []string{"export"},
+}
 var managedRulesSet map[string]bool
 
 func init() {
@@ -72,6 +77,7 @@ func (lang *JS) Loads() []rule.LoadInfo {
 		localRules,
 		tsRules,
 		jestRules,
+		exportsRules,
 	}
 }
 
@@ -85,7 +91,6 @@ func (lang *JS) Loads() []rule.LoadInfo {
 //
 // A GenerateResult struct is returned. Optional fields may be added to this
 // type in the future.
-//
 func (lang *JS) GenerateRules(args language.GenerateArgs) language.GenerateResult {
 
 	jsConfigs := args.Config.Exts[languageName].(JsConfigs)
@@ -114,6 +119,7 @@ func (lang *JS) GenerateRules(args language.GenerateArgs) language.GenerateResul
 
 	managedFiles := make(map[string]bool)
 	webAssetsSet := make(map[string]bool)
+	exportFileSet := make(map[string]bool)
 
 	tsSources := []string{}
 	tsImports := []imports{}
@@ -124,6 +130,7 @@ func (lang *JS) GenerateRules(args language.GenerateArgs) language.GenerateResul
 	generatedImports := make([]interface{}, 0)
 
 	isModule := false
+	found := false
 
 	absJSRoot, _ := filepath.Abs(jsConfig.JSRoot)
 	isJSRoot := absJSRoot == args.Dir
@@ -144,6 +151,8 @@ func (lang *JS) GenerateRules(args language.GenerateArgs) language.GenerateResul
 
 			generatedRules = append(generatedRules, r)
 			generatedImports = append(generatedImports, &noImports)
+
+			found = true
 			continue
 		}
 
@@ -156,8 +165,15 @@ func (lang *JS) GenerateRules(args language.GenerateArgs) language.GenerateResul
 				filePath:  filePath,
 				baseName:  baseName,
 			}, jsConfig)
+
+			i.set["@babel/plugin-proposal-object-rest-spread"] = true
+			i.set["@babel/preset-env"] = true
+
 			generatedRules = append(generatedRules, r)
+
 			generatedImports = append(generatedImports, i)
+
+			found = true
 			continue
 		}
 		// TS TEST
@@ -171,6 +187,8 @@ func (lang *JS) GenerateRules(args language.GenerateArgs) language.GenerateResul
 			}, jsConfig)
 			generatedRules = append(generatedRules, r)
 			generatedImports = append(generatedImports, i)
+
+			found = true
 			continue
 		}
 
@@ -183,7 +201,13 @@ func (lang *JS) GenerateRules(args language.GenerateArgs) language.GenerateResul
 		match = tsExtensionsPattern.FindStringSubmatch(baseName)
 		if len(match) > 0 {
 			tsSources = append(tsSources, baseName)
-			tsImports = append(tsImports, *readFileAndParse(filePath))
+			imports := *readFileAndParse(filePath)
+
+			imports.set["tslib"] = true
+			imports.set["@types/node"] = true
+
+			tsImports = append(tsImports, imports)
+			found = true
 			continue
 		}
 		// JS
@@ -191,6 +215,8 @@ func (lang *JS) GenerateRules(args language.GenerateArgs) language.GenerateResul
 		if len(match) > 0 {
 			jsSources = append(jsSources, baseName)
 			jsImports = append(jsImports, *readFileAndParse(filePath))
+
+			found = true
 			continue
 		}
 
@@ -198,9 +224,20 @@ func (lang *JS) GenerateRules(args language.GenerateArgs) language.GenerateResul
 		for suffix := range jsConfig.WebAssetSuffixes {
 			if strings.HasSuffix(baseName, suffix) {
 				webAssetsSet[baseName] = true
+
+				found = true
 				continue
 			}
 		}
+
+		if !found {
+			if isStaticFile(baseName) {
+				exportFileSet[baseName] = true
+			}
+		}
+
+		found = false
+
 	}
 
 	if isModule && len(tsSources) > 0 && len(jsSources) > 0 {
@@ -223,6 +260,9 @@ func (lang *JS) GenerateRules(args language.GenerateArgs) language.GenerateResul
 				srcs:     tsSources,
 				imports:  tsImports,
 			}, jsConfig)
+
+			r.SetAttr("tsconfig", "//node/packages:tsconfig.json")
+			r.SetAttr("validate", false)
 			generatedRules = append(generatedRules, r)
 			generatedImports = append(generatedImports, i)
 		} else {
@@ -232,8 +272,15 @@ func (lang *JS) GenerateRules(args language.GenerateArgs) language.GenerateResul
 				srcs:     tsSources,
 				trimExt:  true,
 			}, jsConfig)
+
 			for i := range tsRules {
-				generatedRules = append(generatedRules, tsRules[i])
+
+				r := tsRules[i]
+
+				r.SetAttr("tsconfig", "//node/packages:tsconfig.json")
+				r.SetAttr("validate", false)
+
+				generatedRules = append(generatedRules, r)
 				generatedImports = append(generatedImports, &tsImports[i])
 			}
 		}
@@ -249,6 +296,7 @@ func (lang *JS) GenerateRules(args language.GenerateArgs) language.GenerateResul
 				srcs:     jsSources,
 				imports:  jsImports,
 			}, jsConfig)
+
 			generatedRules = append(generatedRules, r)
 			generatedImports = append(generatedImports, i)
 		} else {
@@ -263,7 +311,22 @@ func (lang *JS) GenerateRules(args language.GenerateArgs) language.GenerateResul
 				generatedRules = append(generatedRules, jsRules[i])
 				generatedImports = append(generatedImports, &jsImports[i])
 			}
+
 		}
+
+	}
+
+	exportFiles := make([]string, 0, len(exportFileSet))
+	for file := range exportFileSet {
+		exportFiles = append(exportFiles, file)
+	}
+
+	if len(exportFiles) > 0 {
+		r := rule.NewRule(getKind(args.Config, "export"), "")
+		r.SetAttr("files", exportFiles)
+		r.AddComment("#auto")
+		generatedRules = append(generatedRules, r)
+		generatedImports = append(generatedImports, &noImports)
 	}
 
 	// read webAssetsSet to list
@@ -345,6 +408,7 @@ func (lang *JS) GenerateRules(args language.GenerateArgs) language.GenerateResul
 		// Is this rule managed by Gazelle?
 		if _, ok := managedRulesSet[r.Kind()]; ok {
 			// It is managed, and wasn't generated, so delete it
+
 			r.Delete()
 		}
 	}
@@ -392,6 +456,8 @@ type testRuleArgs struct {
 	extension string
 	filePath  string
 	baseName  string
+
+	data []string
 }
 
 func (lang *JS) makeTestRule(args testRuleArgs, jsConfig *JsConfig) (*imports, *rule.Rule) {
@@ -399,6 +465,11 @@ func (lang *JS) makeTestRule(args testRuleArgs, jsConfig *JsConfig) (*imports, *
 	ruleName := strings.TrimSuffix(args.baseName, args.extension) + ".test"
 	r := rule.NewRule(args.ruleType, ruleName)
 	r.SetAttr("srcs", []string{args.baseName})
+
+	//if len(args.data) > 0 {
+	//	r.SetAttr("data", args.data)
+	//}
+
 	if len(jsConfig.Visibility.Labels) > 0 {
 		r.SetAttr("visibility", jsConfig.Visibility.Labels)
 	}

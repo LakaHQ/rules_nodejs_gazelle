@@ -172,13 +172,26 @@ func (lang *JS) Resolve(c *config.Config, ix *resolve.RuleIndex, rc *repo.Remote
 		}
 
 		// is it an npm dependency?
+
 		if lang.isNpmDependency(name, jsConfig) {
 			s := strings.Split(name, "/")
 			name = s[0]
 			if strings.HasPrefix(name, "@") {
 				name += "/" + s[1]
 			}
-			depSet[jsConfig.NpmLabel+name] = true
+
+			if len(jsConfig.LocalPrefix) > 0 && strings.HasPrefix(s[0], jsConfig.LocalPrefix) {
+				match := jsConfig.ImportAliasPattern.FindStringSubmatch(name)
+				if len(match) > 0 {
+					prefix := match[0]
+					alias := jsConfig.ImportAliases[prefix]
+					name = alias + strings.TrimPrefix(name, prefix)
+				}
+
+				depSet[name] = true
+			} else {
+				depSet[jsConfig.NpmLabel+name] = true
+			}
 
 			if jsConfig.LookupTypes && r.Kind() == "ts_project" {
 				// does it have a corresponding @types/[...] declaration?
@@ -189,6 +202,9 @@ func (lang *JS) Resolve(c *config.Config, ix *resolve.RuleIndex, rc *repo.Remote
 
 			continue
 		}
+
+		// Remove the node: prefix, which indicates builtins
+		name := strings.ReplaceAll(name, "node:", "")
 
 		// is it a builtin?
 		if _, ok := BUILTINS[name]; ok {
@@ -202,10 +218,12 @@ func (lang *JS) Resolve(c *config.Config, ix *resolve.RuleIndex, rc *repo.Remote
 			// add discovered label
 			lbl := resolveResult.label
 			dep := lbl.Rel(from.Repo, from.Pkg).String()
+			log.Printf("discovered user import %s", dep)
 			depSet[dep] = true
 			continue
 		}
 		// fix aliases
+
 		match := jsConfig.ImportAliasPattern.FindStringSubmatch(name)
 		if len(match) > 0 {
 			prefix := match[0]
@@ -214,6 +232,7 @@ func (lang *JS) Resolve(c *config.Config, ix *resolve.RuleIndex, rc *repo.Remote
 		}
 
 		lang.resolveWalkParents(name, depSet, dataSet, c, ix, rc, r, from)
+		log.Printf("deps: %+v, name: %s", depSet, name)
 
 	}
 
@@ -221,6 +240,7 @@ func (lang *JS) Resolve(c *config.Config, ix *resolve.RuleIndex, rc *repo.Remote
 	for dep := range depSet {
 		deps = append(deps, dep)
 	}
+
 	if len(deps) > 0 {
 		r.SetAttr("deps", deps)
 	}
@@ -229,8 +249,16 @@ func (lang *JS) Resolve(c *config.Config, ix *resolve.RuleIndex, rc *repo.Remote
 	for d := range dataSet {
 		data = append(data, d)
 	}
+
 	if len(data) > 0 {
-		r.SetAttr("data", data)
+		//r.SetAttr("data", data)
+		if r.Kind() != "js_library" {
+			//r.SetAttr("data", data)
+		} else {
+			//newSrcs := append(r.AttrStrings("srcs"), data...)
+
+			//r.SetAttr("srcs", newSrcs)
+		}
 	}
 }
 
@@ -277,10 +305,12 @@ func (lang *JS) resolveWalkParents(name string, depSet map[string]bool, dataSet 
 				depSet[dep] = true
 				return
 			}
+
 			if resolveResult.fileName != "" {
 				// add discovered file
 				pkgName := path.Dir(target)
 				data := fmt.Sprintf("//%s:%s", pkgName, resolveResult.fileName)
+
 				dataSet[data] = true
 				return
 			}
@@ -307,7 +337,7 @@ func (lang *JS) resolveWalkParents(name string, depSet map[string]bool, dataSet 
 
 }
 
-//  https://nodejs.org/api/modules.html#modules_all_together
+// https://nodejs.org/api/modules.html#modules_all_together
 func (lang *JS) isNpmDependency(imp string, jsConfig *JsConfig) bool {
 
 	// These prefixes cannot be NPM dependencies
@@ -317,8 +347,11 @@ func (lang *JS) isNpmDependency(imp string, jsConfig *JsConfig) bool {
 	}
 
 	// Assume all @ imports are npm dependencies
+	// Except if they begin with LocalPrefix ie, @myOrg/localModule could be elsewhere in the monorepo
 	if strings.HasPrefix(imp, "@") {
-		return true
+		if jsConfig.LocalPrefix == "" || !strings.HasPrefix(imp, jsConfig.LocalPrefix) {
+			return true
+		}
 	}
 
 	// Grab the first part of the import (ie "foo/bar" -> "foo")
@@ -328,6 +361,11 @@ func (lang *JS) isNpmDependency(imp string, jsConfig *JsConfig) bool {
 			packageRoot = imp[:i]
 			break
 		}
+	}
+
+	if packageRoot == jsConfig.LocalPrefix {
+		// Local import, so technically it's an NPM dep
+		return true
 	}
 
 	// Is the package root found in package.json ?

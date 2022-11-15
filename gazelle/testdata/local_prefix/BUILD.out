@@ -1,0 +1,11 @@
+load("@npm//@bazel/typescript:index.bzl", "ts_project")
+
+# gazelle:js_root
+# gazelle:js_import_alias foo module
+# gazelle:js_local_prefix @laka
+
+ts_project(
+    name = "a",
+    srcs = ["a.ts"],
+    deps = ["@laka/local"],
+)

@@ -71,6 +71,7 @@ type JsConfig struct {
 	Quiet              bool
 	Verbose            bool
 	NpmLabel           string
+	LocalPrefix        string
 }
 
 func NewJsConfig() *JsConfig {
@@ -99,6 +100,7 @@ func NewJsConfig() *JsConfig {
 		Quiet:              false,
 		Verbose:            false,
 		NpmLabel:           "@npm//",
+		LocalPrefix:        "",
 	}
 }
 
@@ -134,7 +136,7 @@ func (parent *JsConfig) NewChild() *JsConfig {
 	child.Quiet = parent.Quiet
 	child.Verbose = parent.Verbose
 	child.NpmLabel = parent.NpmLabel
-
+	child.LocalPrefix = parent.LocalPrefix
 	return child
 }
 
@@ -183,6 +185,7 @@ func (*JS) KnownDirectives() []string {
 		"js_quiet",
 		"js_verbose",
 		"npm_label",
+		"js_local_prefix",
 	}
 }
 
@@ -222,7 +225,6 @@ func (*JS) Configure(c *config.Config, rel string, f *rule.File) {
 	if f != nil {
 
 		for _, directive := range f.Directives {
-
 			switch directive.Key {
 
 			case "js_extension":
@@ -281,7 +283,8 @@ func (*JS) Configure(c *config.Config, rel string, f *rule.File) {
 				jsConfig.Visibility.Set(directive.Value)
 			case "npm_label":
 				jsConfig.NpmLabel = directive.Value
-
+			case "js_local_prefix":
+				jsConfig.LocalPrefix = directive.Value
 			case "js_root":
 				jSRoot, err := filepath.Rel(".", f.Pkg)
 				if err != nil {
@@ -377,6 +380,7 @@ func extensionPattern(extensions []string) *regexp.Regexp {
 }
 
 var indexFilePattern *regexp.Regexp
+var staticFilePattern *regexp.Regexp
 var trimExtPattern *regexp.Regexp
 
 func init() {
@@ -388,6 +392,9 @@ func init() {
 		fmt.Sprintf(`(index)(%s)$`,
 			strings.Join(escaped, "|"),
 		),
+	)
+	staticFilePattern = regexp.MustCompile(
+		fmt.Sprintf(`\.json$`),
 	)
 	trimExtPattern = regexp.MustCompile(
 		fmt.Sprintf(`(\S+)(%s)$`,
@@ -406,6 +413,13 @@ func trimExt(baseName string) string {
 
 func isModuleFile(baseName string) bool {
 	return indexFilePattern.MatchString(baseName)
+}
+
+func isStaticFile(baseName string) bool {
+	if baseName == "package.json" {
+		return false
+	}
+	return staticFilePattern.MatchString(baseName)
 }
 
 func readBoolDirective(directive rule.Directive) bool {

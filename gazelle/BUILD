@@ -28,7 +28,7 @@ go_library(
         "pkgname.go",
         "resolve.go",
     ],
-    importpath = "benchsci.com/gazelle/v2",
+    importpath = "github.com/benchsci/rules_nodejs_gazelle/gazelle",
     visibility = ["//visibility:public"],
     deps = [
         "@bazel_gazelle//config:go_default_library",
@@ -37,7 +37,6 @@ go_library(
         "@bazel_gazelle//repo:go_default_library",
         "@bazel_gazelle//resolve:go_default_library",
         "@bazel_gazelle//rule:go_default_library",
-        "@com_github_bazelbuild_buildtools//build:go_default_library",
     ],
 )
 
@@ -52,9 +51,7 @@ TEST_DEPS = [
 
 go_test(
     name = "generate_test",
-    srcs = [
-        "generate_test.go",
-    ],
+    srcs = ["generate_test.go"],
     embed = [":gazelle"],
     importpath = "benchsci.com/gazelle/v2",
     rundir = ".",
@@ -63,9 +60,7 @@ go_test(
 
 go_test(
     name = "parse_test",
-    srcs = [
-        "parse_test.go",
-    ],
+    srcs = ["parse_test.go"],
     embed = [":gazelle"],
     importpath = "benchsci.com/gazelle/v2",
     rundir = ".",
@@ -74,9 +69,7 @@ go_test(
 
 go_test(
     name = "pkgname_test",
-    srcs = [
-        "pkgname_test.go",
-    ],
+    srcs = ["pkgname_test.go"],
     embed = [":gazelle"],
     importpath = "benchsci.com/gazelle/v2",
     rundir = ".",
@@ -109,5 +102,7 @@ go_test(
         "jsx_conversion",
         "jest_mock",
         "import_alias",
+        "local_prefix",
+        "json_file",
     ]
 ]
